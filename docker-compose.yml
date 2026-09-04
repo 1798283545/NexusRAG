@@ -1,0 +1,30 @@
+services:
+  # ChromaDB 向量数据库服务
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: nexusrag-chromadb
+    ports:
+      - "8000:8000"          # 映射主机 8000 端口
+    volumes:
+      - ./chroma_data:/chroma/chroma   # 持久化 Chroma 数据
+    networks:
+      - nexusrag-net
+
+  # NexusRAG API 服务（占位，Dockerfile 待完善）
+  api:
+    build: .
+    container_name: nexusrag-api
+    ports:
+      - "8001:8000"          # API 映射到主机 8001，避免与 chromadb 端口冲突
+    volumes:
+      - .:/app               # 挂载当前代码目录，支持热加载
+    environment:
+      - CHROMA_HOST=chromadb # 容器内通过服务名访问 ChromaDB
+    depends_on:
+      - chromadb
+    networks:
+      - nexusrag-net
+
+networks:
+  nexusrag-net:
+    driver: bridge

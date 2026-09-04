@@ -1,0 +1,75 @@
+[project]
+name = "nexusrag"
+version = "0.1.0"
+description = "基于 LangChain + LangGraph 的多智能体 RAG 平台"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+license = { text = "MIT" }
+authors = [
+    { name = "NexusRAG Team", email = "dev@nexusrag.dev" },
+]
+keywords = ["rag", "langchain", "langgraph", "multi-agent", "llm", "chromadb"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+    # 核心框架
+    "langchain>=0.3.0",
+    "langgraph>=0.2.0",
+    # 向量存储与文档解析
+    "chromadb",
+    "pypdf",
+    "python-docx",
+    "markdown",
+    "unstructured",
+    # Web 服务
+    "fastapi",
+    "uvicorn[standard]",
+    # 前端与配置
+    "streamlit",
+    "python-dotenv",
+    # LLM 与 Token 计算
+    "openai",
+    "tiktoken",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.0",
+]
+
+[project.scripts]
+nexusrag-serve = "api.main:run"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = [
+    "src/agents",
+    "src/chains",
+    "src/tools",
+    "src/retrievers",
+    "src/loaders",
+    "src/memory",
+    "src/workflows",
+    "src/api",
+    "src/api/routes",
+]
+
+# src/config.py 为顶层模块（非包），需显式打包进 wheel，
+# 保证安装后 `from config import settings` 可正常解析
+[tool.hatch.build.targets.wheel.force-include]
+"src/config.py" = "config.py"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
