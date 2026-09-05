@@ -103,18 +103,21 @@ NexusRAG/
 │   ├── loaders/                # 文档加载与分块（Day 2-3）
 │   │   ├── loader_factory.py   #   加载器工厂：PDF / Word / Markdown / TXT
 │   │   └── splitters.py        #   分块策略：recursive / semantic / markdown
-│   ├── retrievers/             # 检索层（Day 4）
-│   │   └── vector_store.py     #   ChromaDB 向量存储封装（CRUD + 阈值检索）
+│   ├── retrievers/             # 检索层（Day 4 / Day 8 / Day 10）
+│   │   ├── vector_store.py     #   ChromaDB 向量存储封装（CRUD + 阈值检索）
+│   │   ├── hybrid_retriever.py #   混合检索：向量 + BM25（加权和 / RRF 融合）
+│   │   └── reranker.py         #   Cross-Encoder 重排（ms-marco / bge-reranker）
 │   ├── chains/                 # 链式编排（Day 5）
 │   │   └── rag_chain.py        #   RAG 问答链（索引 / 检索 / 生成 / 溯源）
 │   ├── agents/                 # 多智能体（阶段三）
 │   ├── tools/                  # 智能体工具集（阶段三）
-│   ├── memory/                 # 对话记忆（阶段二）
+│   ├── memory/                 # 对话记忆（Day 9）
+│   │   └── conversation_memory.py #   多会话记忆：buffer / buffer_window / summary
 │   ├── workflows/              # 工作流编排（阶段三）
 │   ├── api/                    # FastAPI 服务（阶段四）
 │   │   └── routes/
 │   └── config.py               # 全局配置（.env 联动）
-├── tests/                      # 单元测试（loaders / splitters / vector_store / rag_chain / api）
+├── tests/                      # 单元测试（loaders / splitters / vector_store / hybrid / reranker / rag_chain / memory / agents / tools）
 ├── scripts/
 │   ├── quick_start.py          # 一键体验完整 RAG 流程
 │   └── check_health.py         # 模块健康检查

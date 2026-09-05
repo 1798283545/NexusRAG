@@ -37,6 +37,17 @@ dependencies = [
     # LLM 与 Token 计算
     "openai",
     "tiktoken",
+    # 智能体框架与工具依赖
+    "langchain-community>=0.2.0",
+    "duckduckgo-search>=5.0.0",
+    # 代码执行 / 数据分析 / 图表生成
+    "pandas>=2.0.0",
+    "matplotlib>=3.7.0",
+    "seaborn>=0.12.0",
+    # 联网搜索与网页内容提取
+    "requests>=2.31.0",
+    "beautifulsoup4>=4.12.0",
+    "lxml>=4.9.0",
 ]
 
 [dependency-groups]

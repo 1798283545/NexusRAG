@@ -342,6 +342,39 @@ class VectorStoreManager:
         matched = self._collection.get(where=filter or None, include=[])
         return len(matched.get("ids") or [])
 
+    def get_all_documents(self) -> List[Document]:
+        """导出集合中的全部文档（正文 + 元数据）。
+
+        先取全部 ID，再按 ``_BATCH_SIZE`` 分批读取，避免一次性加载过多
+        文档导致内存占用过高，供 BM25 等基于全量语料的功能使用。
+
+        Returns:
+            集合中全部文档的 Document 列表（顺序不保证稳定）。
+        """
+        ids: List[str] = self._collection.get(include=[])["ids"] or []
+        documents: List[Document] = []
+        for start in range(0, len(ids), _BATCH_SIZE):
+            chunk = ids[start : start + _BATCH_SIZE]
+            if not chunk:
+                continue
+            result = self._collection.get(ids=chunk, include=["documents", "metadatas"])
+            texts = result.get("documents") or []
+            metadatas = result.get("metadatas") or []
+            for index, text in enumerate(texts):
+                raw_meta = metadatas[index] if index < len(metadatas) else None
+                documents.append(
+                    Document(
+                        page_content=text or "",
+                        metadata={**(raw_meta or {})},
+                    )
+                )
+        logger.info(
+            "get_all_documents 完成: 集合 %s 共导出 %d 条文档",
+            self.collection_name,
+            len(documents),
+        )
+        return documents
+
     def clear_collection(self) -> bool:
         """清空集合中的所有文档（用于测试或重置）。"""
         try:

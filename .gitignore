@@ -20,6 +20,10 @@ chroma_data/
 demo_chroma/
 health_chroma/
 
+# 智能体工作目录 与 LangGraph 检查点
+workspace/
+checkpoints/
+
 # 测试与缓存
 .pytest_cache/
 .coverage
