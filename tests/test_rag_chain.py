@@ -252,7 +252,7 @@ def test_process_mixed_format_documents(tmp_path):
 
 
 def test_stream_query_falls_back_on_mid_stream_failure(tmp_path):
-    """流式问答中途失败：已产出部分保留，最终事件携带 llm_error。"""
+    """流式问答中途失败：已产出 token 保留，最终以 error 事件终止。"""
     test_file = tmp_path / "doc.txt"
     test_file.write_text("LangChain 支持流式输出。")
 
@@ -260,8 +260,8 @@ def test_stream_query_falls_back_on_mid_stream_failure(tmp_path):
     chain.process_document(str(test_file))
 
     events = list(chain.stream_query("LangChain 是什么？"))
-    assert isinstance(events[0], str) and events[0] == "部分输出"
-    final = events[-1]
-    assert final["type"] == "sources"
-    assert "llm_error" in final
-    assert "mock mid-stream failure" in final["llm_error"]
+    tokens = [event["content"] for event in events if event["type"] == "token"]
+    assert tokens == ["部分输出"]
+    last = events[-1]
+    assert last["type"] == "error"
+    assert "mock mid-stream failure" in last["detail"]

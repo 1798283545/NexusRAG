@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Dict, Generator, List, Optional, Tuple, Union
+import time
+from typing import Any, Dict, Generator, List, Optional, Tuple
 
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.documents import Document
@@ -406,56 +407,149 @@ class RAGChain:
             result["llm_error"] = llm_error
         return result
 
+    @staticmethod
+    def _serialize_source_meta(doc: Document, score: float) -> Dict[str, Any]:
+        """将单条检索结果的 metadata 归一化为可 JSON 序列化的来源信息。"""
+        meta = dict(doc.metadata or {})
+        file_name = meta.get("file_name") or os.path.basename(
+            str(meta.get("source", "") or "")
+        )
+        if file_name:
+            meta.setdefault("file_name", file_name)
+        meta["score"] = round(float(score), 4)
+        return meta
+
     def stream_query(
         self,
         query: str,
         k: Optional[int] = None,
         filter: Optional[Dict[str, Any]] = None,
         threshold: Optional[float] = None,
-    ) -> Generator[Union[str, Dict[str, Any]], None, None]:
-        """流式 RAG 问答（供 SSE 使用）。
+        history: Optional[List[Dict[str, str]]] = None,
+        yield_sources: bool = True,
+        yield_thinking: bool = True,
+    ) -> Generator[Dict[str, Any], None, None]:
+        """流式 RAG 问答（SSE 事件源，支持打字机效果与元信息）。
 
-        依次 yield 每个文本 token；结束后 yield 一个
-        ``{"type": "sources", ...}`` 事件字典，携带来源与完整回答。
+        依次产出可直接序列化为 SSE ``data:`` 帧的事件字典：
+
+        - ``{"type": "thinking", "content": str, "step": int}``：检索 / 生成等
+          阶段提示（``yield_thinking=False`` 时跳过）；
+        - ``{"type": "sources", "sources": [{content, metadata}]}``：生成前
+          发送的检索来源（``yield_sources=False`` 时跳过）；
+        - ``{"type": "token", "content": str}``：每个流式文本块（打字机）；
+        - ``{"type": "done", "total_tokens": int, "execution_time": float}``
+          或 ``{"type": "error", "error": str, "detail": str}``：终止事件。
+
+        失败降级语义：
+
+        - 检索失败：发送 thinking 说明后，仍以空来源继续调用 LLM 生成；
+        - LLM 中途失败：先产出已生成的 token，再发送 ``error`` 事件终止。
 
         Args:
             query: 用户问题。
-            k: 检索条数。
+            k: 检索条数（默认使用实例 k）。
             filter: 可选的元数据过滤条件。
-            threshold: 低分过滤阈值。
+            threshold: 低分过滤阈值（默认 0.5）。
+            history: 对话历史（预留接口，多轮记忆由上层注入后透传）。
+            yield_sources: 是否产出 sources 事件。
+            yield_thinking: 是否产出 thinking 阶段提示事件。
 
         Yields:
-            str 或包含来源信息的最终事件字典。
-        """
-        context, sources, _ = self._prepare(query, k, filter, threshold)
-        collected: List[str] = []
-        llm_error: Optional[str] = None
+            事件字典（键与 SSE ``data:`` 帧保持一致）。
 
-        # 建立 LLM 实例与消息；失败则整体降级为纯检索文本
+        Note:
+            ``execution_time`` 只累计生成器真正执行的耗时，自动剔除流式传输中
+            客户端打字延迟 / 网络等待造成的挂起时间。
+        """
+        if history:
+            logger.debug("已接收 %d 条对话历史（多轮记忆由上层注入）", len(history))
+
+        # 计时基准：任何一次 yield 恢复后都重设，从而把客户端等待时间剔除
+        step = 0
+        active = 0.0
+        _resume = [time.perf_counter()]
+
+        def _acc() -> float:
+            """返回自上次恢复（或生成器启动）以来实际执行的秒数。"""
+            return time.perf_counter() - _resume[0]
+
+        if yield_thinking:
+            step += 1
+            active += _acc()
+            yield {"type": "thinking", "content": "正在检索相关文档…", "step": step}
+            _resume[0] = time.perf_counter()
+
+        context = "（未检索到相关文档内容）"
+        sources: List[Dict[str, Any]] = []
+        documents: List[Tuple[Document, float]] = []
+        try:
+            context, sources, documents = self._prepare(
+                query, k if k is not None else self.k, filter, threshold
+            )
+        except Exception as exc:  # noqa: BLE001 - 检索失败降级为无上下文生成
+            logger.exception("流式检索失败，尝试无上下文直接生成: %s", exc)
+            if yield_thinking:
+                step += 1
+                active += _acc()
+                yield {
+                    "type": "thinking",
+                    "content": f"检索失败（{exc}），将尝试直接生成回答（来源为空）。",
+                    "step": step,
+                }
+                _resume[0] = time.perf_counter()
+
+        if yield_sources:
+            payload = [
+                {
+                    "content": doc.page_content,
+                    "metadata": self._serialize_source_meta(doc, score),
+                }
+                for doc, score in documents
+            ]
+            active += _acc()
+            yield {"type": "sources", "sources": payload}
+            _resume[0] = time.perf_counter()
+
+        tokens = 0
         try:
             llm = self._get_llm()
             messages = self._qa_prompt.format_messages(context=context, question=query)
+            if yield_thinking:
+                step += 1
+                active += _acc()
+                yield {
+                    "type": "thinking",
+                    "content": (
+                        f"已获取 {len(sources)} 个相关文档，正在调用大模型生成回答…"
+                        if sources
+                        else "未检索到相关文档，正在调用大模型尝试回答…"
+                    ),
+                    "step": step,
+                }
+                _resume[0] = time.perf_counter()
             for chunk in llm.stream(messages):
                 token = self._as_text(chunk)
-                if token:
-                    collected.append(token)
-                    yield token
-        except Exception as exc:  # noqa: BLE001 - 失败降级为纯检索
-            logger.error("流式 LLM 生成失败，降级为纯检索回答: %s", exc)
-            llm_error = str(exc)
+                if not token:
+                    continue
+                tokens += 1
+                active += _acc()
+                yield {"type": "token", "content": token}
+                _resume[0] = time.perf_counter()
+        except Exception as exc:  # noqa: BLE001 - 流式中断以 error 事件终止
+            logger.error("流式 LLM 生成失败: %s", exc)
+            active += _acc()
+            yield {
+                "type": "error",
+                "error": "llm_stream_error",
+                "detail": f"{exc}（已流式输出 {tokens} 个 token）",
+            }
+            _resume[0] = time.perf_counter()
+            return
 
-        if llm_error is not None and not collected:
-            fallback = self._fallback_text(context)
-            yield fallback
-            answer = self._attach_sources(fallback, sources)
-        else:
-            answer = self._attach_sources("".join(collected).strip(), sources)
-
-        event: Dict[str, Any] = {
-            "type": "sources",
-            "answer": answer,
-            "source_documents": sources,
+        active += _acc()
+        yield {
+            "type": "done",
+            "total_tokens": tokens,
+            "execution_time": round(active, 4),
         }
-        if llm_error is not None:
-            event["llm_error"] = llm_error
-        yield event

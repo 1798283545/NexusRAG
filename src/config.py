@@ -4,6 +4,7 @@
 """
 
 import os
+from typing import List
 
 from dotenv import load_dotenv
 
@@ -41,6 +42,10 @@ class Settings:
         WORKFLOW_MAX_ITERATIONS: 工作流最大循环迭代次数（防死循环）。
         WORKFLOW_SUBTASK_TIMEOUT: 工作流内单个子任务执行超时（秒）。
         WORKFLOW_CHECKPOINT_DIR: LangGraph 检查点持久化目录。
+        API_HOST: API 服务监听地址。
+        API_PORT: API 服务监听端口。
+        API_RELOAD: 开发期是否启用 uvicorn 热重载。
+        API_CORS_ORIGINS: 允许跨域的来源（逗号分隔，"*" 表示全部放行）。
     """
 
     CHROMA_HOST: str = os.getenv("CHROMA_HOST", "localhost")
@@ -102,6 +107,24 @@ class Settings:
     WORKFLOW_MAX_ITERATIONS: int = int(os.getenv("WORKFLOW_MAX_ITERATIONS", "10"))
     WORKFLOW_SUBTASK_TIMEOUT: float = float(os.getenv("WORKFLOW_SUBTASK_TIMEOUT", "60"))
     WORKFLOW_CHECKPOINT_DIR: str = os.getenv("WORKFLOW_CHECKPOINT_DIR", "./checkpoints")
+
+    # API 服务配置
+    API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
+    API_PORT: int = int(os.getenv("API_PORT", "8000"))
+    API_RELOAD: bool = os.getenv("API_RELOAD", "false").lower() == "true"
+    API_CORS_ORIGINS: str = os.getenv("API_CORS_ORIGINS", "*")
+
+    # SSE 流式响应配置
+    SSE_BUFFER_SIZE: int = int(os.getenv("SSE_BUFFER_SIZE", "1"))
+    SSE_CHUNK_DELAY: float = float(os.getenv("SSE_CHUNK_DELAY", "0.01"))
+    SSE_TIMEOUT: int = int(os.getenv("SSE_TIMEOUT", "120"))
+    SSE_ENABLE_THINKING: bool = os.getenv("SSE_ENABLE_THINKING", "true").lower() == "true"
+
+    @property
+    def api_cors_origins(self) -> List[str]:
+        """解析后的跨域白名单（逗号分隔 → 列表；空值回退为 ``["*"]``）。"""
+        origins = [item.strip() for item in self.API_CORS_ORIGINS.split(",") if item.strip()]
+        return origins or ["*"]
 
 
 #: 全局单例，供各模块直接引用
